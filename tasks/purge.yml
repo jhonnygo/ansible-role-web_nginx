@@ -1,0 +1,91 @@
+---
+# =============================================================================
+# Tasks: Purge unlisted vhosts
+#
+# Purpose
+#   Remove any vhost configs under sites-{available,enabled} that are NOT:
+#     - explicitly declared in `web_nginx_vhosts` (by filename or derived name),
+#     - listed in `web_nginx_purge_exclude_names`, or
+#     - the managed catch-all (when enabled).
+#
+# Safety
+#   - Filenames are compared by *basename without `.conf`* to avoid mismatches.
+#   - Excludes are normalized the same way.
+#   - This is potentially destructive on shared hosts; keep
+#     `web_nginx_purge_unlisted_vhosts: false` unless you truly want pruning.
+#
+# Idempotency
+#   - `file: state=absent` is idempotent.
+#   - Any removal triggers "reload nginx" (handler validates via `nginx -t` first).
+# =============================================================================
+
+# Collect allowed basenames from declared vhosts that explicitly set `filename`
+- name: Build allowed basenames from declared vhosts
+  ansible.builtin.set_fact:
+    _allowed_basenames: >-
+      {{ (web_nginx_vhosts | map(attribute='filename') | list | select('defined') | list
+          | map('regex_replace', '\\.[cC][oO][nN][fF]$', '') | list) | default([]) }}
+
+# Add derived basenames for vhosts that do NOT set `filename`
+# We derive from server_name and normalize to a safe filename base.
+- name: Add computed basenames for vhosts without explicit filename
+  ansible.builtin.set_fact:
+    _allowed_basenames: >-
+      {{ _allowed_basenames
+         + (web_nginx_vhosts | rejectattr('filename', 'defined')
+            | map(attribute='server_name')
+            | map('regex_replace', '[^a-zA-Z0-9_.-]', '_') | list) }}
+
+# Add excludes and (optionally) the catch-all file to the allowed list
+- name: Add excludes and catch-all to allowed list
+  ansible.builtin.set_fact:
+    _allowed_basenames: >-
+      {{ (_allowed_basenames
+         + (web_nginx_purge_exclude_names | map('regex_replace', '\\.[cC][oO][nN][fF]$', '') | list)
+         + ([web_nginx_catch_all_filename | regex_replace('\\.[cC][oO][nN][fF]$', '')] if web_nginx_manage_catch_all else [])) | unique }}
+
+# Enumerate *actual* files under sites-available (only regular files)
+- name: Find available *.conf files
+  ansible.builtin.find:
+    paths: "{{ web_nginx_sites_available }}"
+    patterns: "*.conf"
+    file_type: file
+  register: _avail
+
+# Enumerate symlinks/files under sites-enabled (could be link or file)
+- name: Find enabled *.conf links
+  ansible.builtin.find:
+    paths: "{{ web_nginx_sites_enabled }}"
+    patterns: "*.conf"
+    file_type: any
+  register: _enabled
+
+# Compute which basenames must be removed from sites-available
+- name: Compute purge targets (available)
+  ansible.builtin.set_fact:
+    _purge_available: >-
+      {{ _avail.files | map(attribute='path') | map('basename')
+         | map('regex_replace', '\\.[cC][oO][nN][fF]$', '') | difference(_allowed_basenames) | list }}
+
+# Compute which basenames must be removed from sites-enabled
+- name: Compute purge targets (enabled)
+  ansible.builtin.set_fact:
+    _purge_enabled: >-
+      {{ _enabled.files | map(attribute='path') | map('basename')
+         | map('regex_replace', '\\.[cC][oO][nN][fF]$', '') | difference(_allowed_basenames) | list }}
+
+# Remove from sites-enabled first (avoid enabled references to soon-to-be-missing files)
+- name: Purge from sites-enabled
+  ansible.builtin.file:
+    path: "{{ web_nginx_sites_enabled }}/{{ item }}.conf"
+    state: absent
+  loop: "{{ _purge_enabled }}"
+  notify: reload nginx
+
+# Remove from sites-available afterwards
+- name: Purge from sites-available
+  ansible.builtin.file:
+    path: "{{ web_nginx_sites_available }}/{{ item }}.conf"
+    state: absent
+  loop: "{{ _purge_available }}"
+  notify: reload nginx

@@ -1,0 +1,22 @@
+---
+# =============================================================================
+# Tasks: Explicit configuration validation
+#
+# Purpose
+#   Run `nginx -t` explicitly near the end of the role to surface syntax
+#   errors before any service action. Handlers will also validate on reload,
+#   but this gives earlier feedback within the task list.
+#
+# Notes
+#   - We mark the task as not changing state (`changed_when: false`) so that
+#     a successful validation does not appear as a change.
+#   - We intentionally do NOT fail here (`failed_when`) to let the handler
+#     print detailed stderr if a later change triggers a reload. If you prefer
+#     a hard fail immediately, uncomment the `failed_when` line below.
+# =============================================================================
+
+- name: Run nginx -t (explicit)
+  ansible.builtin.command: nginx -t
+  register: _nginx_test
+  changed_when: false
+  # failed_when: _nginx_test.rc != 0   # ← enable if you want to fail right here

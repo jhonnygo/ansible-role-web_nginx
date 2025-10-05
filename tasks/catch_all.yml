@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# Tasks: Manage the catch-all server block
+#
+# Purpose
+#   Provide a default_server that safely handles unknown/undeclared hosts.
+#   Behavior is driven by variables:
+#     - web_nginx_catch_all_mode: 403 | 404 | redirect
+#     - web_nginx_catch_all_redirect_to: target URL when mode=redirect
+#
+# Safety & Idempotency
+#   - Creates the docroot if missing (owner/group/mode from role defaults).
+#   - Renders the catch-all server block from a template.
+#   - Enables the site via symlink (force to keep idempotency if it exists).
+#   - Any of these tasks may trigger a "reload nginx" handler, which
+#     validates with `nginx -t` before reloading.
+#
+# Files
+#   - Template: templates/server_catch_all.conf.j2
+#   - Enabled at: {{ web_nginx_sites_enabled }}/{{ web_nginx_catch_all_filename }}
+#   - Available at: {{ web_nginx_sites_available }}/{{ web_nginx_catch_all_filename }}
+# =============================================================================
+- name: Ensure catch-all docroot exists
+  ansible.builtin.file:
+    path: "{{ web_nginx_catch_all_docroot }}"
+    state: directory
+    owner: "{{ web_nginx_docroot_default_owner }}"
+    group: "{{ web_nginx_docroot_default_group }}"
+    mode:  "{{ web_nginx_docroot_default_mode }}"
+
+- name: Render catch-all server config
+  ansible.builtin.template:
+    src: server_catch_all.conf.j2
+    dest: "{{ web_nginx_sites_available }}/{{ web_nginx_catch_all_filename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable catch-all site
+  ansible.builtin.file:
+    src: "{{ web_nginx_sites_available }}/{{ web_nginx_catch_all_filename }}"
+    dest: "{{ web_nginx_sites_enabled }}/{{ web_nginx_catch_all_filename }}"
+    state: link
+    force: true         # recreate/retarget if link exists → idempotent
+  notify: reload nginx

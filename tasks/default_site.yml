@@ -1,0 +1,31 @@
+---
+# =============================================================================
+# Tasks: Disable the distro-provided "default" site
+#
+# Purpose
+#   Prevent `duplicate default server` errors by removing the stock
+#   distro-enabled default site that ships with NGINX packages on
+#   Debian/Ubuntu. Our role typically manages its own catch-all site,
+#   which also uses `default_server`.
+#
+# Behavior
+#   - Controlled by `web_nginx_remove_distro_default` (bool).
+#   - Removes common default symlinks under sites-enabled.
+#   - Safe and idempotent: removing a non-existent file is a no-op.
+#
+# Notes
+#   - We only touch `sites-enabled` symlinks; the file in `sites-available`
+#     can remain for reference and won’t be used unless re-enabled.
+#   - Any change triggers the "reload nginx" handler, which validates
+#     configuration with `nginx -t` before reloading.
+# =============================================================================
+
+- name: Disable distro default site (symlinks)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/nginx/sites-enabled/default
+    - /etc/nginx/sites-enabled/default.conf
+  when: web_nginx_remove_distro_default | bool
+  notify: reload nginx

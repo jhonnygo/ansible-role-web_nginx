@@ -1,0 +1,111 @@
+---
+# =============================================================================
+# Tasks: Role entrypoint (main)
+#
+# Orchestration order:
+#   1) Install packages and prepare filesystem layout.
+#   2) Manage conf.d feature toggles (gzip/proxy) safely (no duplicates).
+#   3) Disable the distro “default” site if requested (avoid default_server clashes).
+#   4) Render/enable the catch-all server block (optional).
+#   5) Render/enable declared vhosts.
+#   6) Optionally purge unlisted vhosts.
+#   7) Validate configuration (nginx -t) BEFORE touching the service.
+#   8) Finally enable/start/reload the nginx service.
+#
+# Rationale:
+#   - We delay service management to the end to avoid starting nginx with a
+#     half-written configuration. Handlers will validate before reloading.
+#   - All copy/file operations are idempotent; symlinks use force for stability.
+# =============================================================================
+
+# 1) Install base packages and create standard directories (where appropriate)
+- name: Install
+  ansible.builtin.import_tasks: install.yml
+
+# =========================
+# conf.d toggles (gzip/proxy)
+# =========================
+# We ensure there is at most one gzip snippet and one proxy snippet to avoid
+# duplicate directives. The gzip snippet provided by this role only sets
+# parameters (NO "gzip on;") to avoid conflicts if gzip is enabled elsewhere.
+
+# Remove any pre-existing gzip/proxy snippets that may conflict with ours
+- name: Remove existing gzip/proxy snippets that could conflict
+  ansible.builtin.file:
+    path: "/etc/nginx/conf.d/{{ item }}"
+    state: absent
+  loop:
+    - gzip.conf
+    - 00-gzip.conf
+    - 10-gzip.conf
+    - 20-gzip.conf
+    - proxy.conf
+  when: (item is search('gzip') and web_nginx_gzip) or
+        (item == 'proxy.conf' and web_nginx_proxy)
+  notify: reload nginx
+
+# Install our snippets:
+#   - 20-gzip.conf: parameters ONLY (no "gzip on;")
+#   - proxy.conf:   safe default proxy headers
+- name: Manage conf.d toggles (gzip/proxy)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/etc/nginx/conf.d/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - { src: 'gzip.conf',  dest: '20-gzip.conf' }
+    - { src: 'proxy.conf', dest: 'proxy.conf' }
+  when: (item.dest == '20-gzip.conf' and web_nginx_gzip) or
+        (item.dest == 'proxy.conf' and web_nginx_proxy)
+  notify: reload nginx
+
+# Remove snippets if disabled via variables
+- name: Remove disabled conf.d toggles
+  ansible.builtin.file:
+    path: "/etc/nginx/conf.d/{{ item }}"
+    state: absent
+  loop:
+    - 20-gzip.conf
+    - proxy.conf
+  when: (item == '20-gzip.conf' and not web_nginx_gzip) or
+        (item == 'proxy.conf' and not web_nginx_proxy)
+  notify: reload nginx
+
+# =========================
+# Disable distro 'default' site (optional)
+# =========================
+# Prevent “duplicate default server” by removing the stock default site symlink
+# when the role manages its own catch-all default_server.
+- name: Disable distro default site
+  ansible.builtin.import_tasks: default_site.yml
+
+# =========================
+# Server blocks
+# =========================
+# Catch-all default_server (403/404/redirect as configured)
+
+- name: Catch-all
+  ansible.builtin.import_tasks: catch_all.yml
+  when: web_nginx_manage_catch_all
+
+# Declared vhosts (HTTP + optional HTTPS blocks)
+- name: Vhosts
+  ansible.builtin.import_tasks: vhosts.yml
+
+# Optionally purge any unmanaged vhost files
+- name: Purge unlisted vhosts
+  ansible.builtin.import_tasks: purge.yml
+  when: web_nginx_purge_unlisted_vhosts
+
+# =========================
+# Validation and service
+# =========================
+# Explicit pre-handler validation (fast feedback) and then service management.
+
+- name: Validate (explicit pre-handler check)
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Service baseline
+  ansible.builtin.import_tasks: service.yml

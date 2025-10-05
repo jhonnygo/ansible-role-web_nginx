@@ -1,0 +1,30 @@
+---
+# =============================================================================
+# Tasks: Manage the NGINX service
+#
+# Design notes
+#   - We gate service actions behind `not ansible_check_mode` to avoid
+#     misleading results in dry runs (where the package/service might not
+#     exist yet). The role validates configuration (nginx -t) before any
+#     reload via handlers.
+#   - `enabled` controls boot-time behavior; `state` controls runtime state.
+#     Both are driven by role defaults/vars.
+#
+# Typical values
+#   - web_nginx_enabled: true|false
+#   - web_nginx_state:   started|stopped
+# =============================================================================
+
+# Control whether nginx is enabled on boot
+- name: Enable/disable nginx service
+  ansible.builtin.service:
+    name: nginx
+    enabled: "{{ web_nginx_enabled | bool }}"
+  when: not ansible_check_mode
+
+# Ensure the desired runtime state (started/stopped)
+- name: Ensure nginx state
+  ansible.builtin.service:
+    name: nginx
+    state: "{{ web_nginx_state }}"
+  when: not ansible_check_mode

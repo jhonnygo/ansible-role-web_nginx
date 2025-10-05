@@ -1,0 +1,75 @@
+---
+# =============================================================================
+# Tasks: Per-vhost HTTPS management
+#
+# Context
+#   - This task file is included from vhosts.yml with:
+#       include_tasks: ssl.yml
+#       loop: "{{ _web_nginx_vhosts_norm }}"
+#       loop_control: { loop_var: vhost }
+#       when: vhost.https.enabled | bool
+#
+# What it does
+#   1) Ensures certificate and private key directories exist (safe perms).
+#   2) Optionally generates a self-signed certificate (idempotent via `creates`).
+#   3) Renders the HTTPS server block from a template.
+#   4) Enables the HTTPS server by creating a symlink in sites-enabled.
+#
+# Safety / Idempotency
+#   - Directories are created with 0755 (certs) and 0700 (private).
+#   - Self-signed cert generation uses `creates:` to avoid overwriting.
+#   - Any change notifies the "reload nginx" handler; the handler runs `nginx -t`
+#     before reloading, and fails gracefully with stderr if invalid.
+# =============================================================================
+
+# 1) Ensure the certificate directory exists
+- name: Ensure certificate directory exists
+  ansible.builtin.file:
+    path: "{{ (vhost.https.certificate | dirname) if (vhost.https.certificate is defined) else '/etc/ssl/certs' }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+# 2) Ensure the private key directory exists (restrictive permissions)
+- name: Ensure private key directory exists
+  ansible.builtin.file:
+    path: "{{ (vhost.https.certificate_key | dirname) if (vhost.https.certificate_key is defined) else '/etc/ssl/private' }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+# 3) Generate a self-signed certificate if requested
+#    - Uses `creates:` so it runs only once per vhost (idempotent).
+#    - RSA 2048, 365 days, subject CN from self_signed_common_name or server_name.
+- name: Generate self-signed certificate if requested
+  ansible.builtin.command: >-
+    openssl req -x509 -nodes -days 365
+    -newkey rsa:2048
+    -keyout {{ vhost.https.certificate_key | default('/etc/ssl/private/' + vhost.server_name + '.key') }}
+    -out {{ vhost.https.certificate | default('/etc/ssl/certs/' + vhost.server_name + '.crt') }}
+    -subj "/CN={{ vhost.https.self_signed_common_name | default(vhost.server_name) }}"
+  args:
+    creates: "{{ vhost.https.certificate | default('/etc/ssl/certs/' + vhost.server_name + '.crt') }}"
+  when: vhost.https.self_signed | default(false)
+
+# 4) Render the HTTPS server block configuration
+#    - Filename pattern: <basename>-ssl.conf (keeps HTTP/HTTPS files distinct).
+- name: Render HTTPS server config
+  ansible.builtin.template:
+    src: server_https.conf.j2
+    dest: "{{ web_nginx_sites_available }}/{{ vhost.filename | regex_replace('\\.conf$', '') }}-ssl.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+# 5) Enable the HTTPS server via symlink in sites-enabled (idempotent with force)
+- name: Enable HTTPS vhost via symlink
+  ansible.builtin.file:
+    src: "{{ web_nginx_sites_available }}/{{ vhost.filename | regex_replace('\\.conf$', '') }}-ssl.conf"
+    dest: "{{ web_nginx_sites_enabled }}/{{ vhost.filename | regex_replace('\\.conf$', '') }}-ssl.conf"
+    state: link
+    force: true
+  notify: reload nginx

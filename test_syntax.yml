@@ -1,0 +1,8 @@
+---
+- name: Load role locally to validate play/role syntax (no facts)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  roles:
+    - role: web_nginx

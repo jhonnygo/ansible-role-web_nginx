@@ -1,0 +1,35 @@
+---
+galaxy_info:
+  role_name: web_nginx
+  author: "Jhonny Alexander (JhonnyGO)"
+  description: >
+    Install and configure NGINX on Debian/Ubuntu with declarative vhosts (HTTP/HTTPS),
+    catch-all default_server, optional self-signed certificates, purge of unmanaged sites,
+    and safe idempotent reloads (nginx -t validated).
+  license: MIT
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal     # 20.04
+        - jammy     # 22.04
+        - noble     # 24.04
+    - name: Debian
+      versions:
+        - bullseye  # 11
+        - bookworm  # 12
+
+  galaxy_tags:
+    - nginx
+    - web
+    - vhosts
+    - reverse-proxy
+    - https
+    - debian
+    - ubuntu
+    - sysadmin
+    - devops
+
+# Role dependencies (other roles). Keep empty unless you truly depend on one.
+dependencies: []

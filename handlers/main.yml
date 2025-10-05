@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# Handlers for the web_nginx role
+#
+# Design:
+#   - All config-changing tasks `notify: reload nginx`.
+#   - Before reloading, we validate the configuration with `nginx -t`.
+#   - If validation fails, we print stderr and fail the run.
+#   - Reload only happens when validation succeeded.
+#
+# Why multiple handlers with the same "listen"?
+#   Ansible runs handlers in the order they are defined. By having several
+#   handlers listening to "reload nginx", we can:
+#     1) Validate first,
+#     2) Fail early (and print stderr) if invalid,
+#     3) Reload only when rc == 0.
+# =============================================================================
+
+# 1) Validate NGINX configuration (no changes to system state)
+- name: Validate nginx configuration
+  listen: "reload nginx"
+  ansible.builtin.command: nginx -t
+  register: nginx_test
+  changed_when: false
+
+# 2) If validation failed, show stderr and fail the run explicitly
+- name: Reload nginx
+  listen: "reload nginx"
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+
+# 3) Reload NGINX (only when config is valid)
+- name: Show nginx test stderr if failed
+  listen: "reload nginx"
+  ansible.builtin.debug:
+    var: nginx_test.stderr
+  failed_when: nginx_test.rc != 0
+  when: nginx_test is defined
+
+# Optional: full restart (rarely needed — prefer reload)
+- name: restart nginx (rare)
+  listen: "restart nginx"
+  ansible.builtin.service:
+    name: nginx
+    state: restarted

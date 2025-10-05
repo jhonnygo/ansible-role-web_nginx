@@ -1,0 +1,49 @@
+# galaxy.yml — metadata for a ROLE repository (not a collection)
+# Bump "version" with each release tag (must match your Git tag).
+namespace: jhonnygo
+name: web_nginx
+version: 0.1.0
+
+readme: README.md
+description: >
+  Install and configure NGINX on Debian/Ubuntu with declarative vhosts (HTTP/HTTPS),
+  catch-all default_server, optional self-signed certificates, purge of unmanaged sites,
+  and safe idempotent reloads (nginx -t validated).
+
+authors:
+  - "Jhonny Alexander (JhonnyGO) <support@jhoncytech.com>"
+
+license: [MIT]
+
+tags:
+  - nginx
+  - web
+  - vhosts
+  - reverse-proxy
+  - https
+  - debian
+  - ubuntu
+  - sysadmin
+  - devops
+  - ansible-role
+
+# Helpful links shown on Galaxy
+repository: "https://github.com/jhonnygo/ansible-role-web_nginx"
+issues: "https://github.com/jhonnygo/ansible-role-web_nginx/issues"
+
+# Exclude dev-only content from import/display (optional but recommended)
+build_ignore:
+  - ".git"
+  - ".github"
+  - ".gitignore"
+  - ".editorconfig"
+  - ".pre-commit-config.yaml"
+  - "molecule/"
+  - "tests/"
+  - "inventory/"
+  - "inventories/"
+  - "examples/"
+  - "docs/"
+  - "scripts/"
+  - "artifacts/"
+  - "*.tar.gz"

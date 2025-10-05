@@ -1,0 +1,80 @@
+# =============================================================================
+# HTTP server block (managed by web_nginx role)
+#
+# Inputs (per vhost item):
+#   - item.server_name            (string, required)
+#   - item.extra_server_names     (list[str], optional)
+#   - item.filename               (string, derived if not provided)
+#   - item.listen                 (int|string, defaults to web_nginx_listen_port)
+#   - item.root                   (string, optional → defaults to catch-all docroot)
+#   - item.index                  (string, defaults to web_nginx_default_index)
+#   - item.access_log / error_log (strings, optional; sane defaults derived)
+#   - item.locations              (list[location], optional; see below)
+#
+# Location item shape (examples):
+#   - path: "/"
+#     try_files: "$uri $uri/ /index.html"
+#
+#   - path: "/api/"
+#     proxy_pass: "http://127.0.0.1:8080"
+#     proxy_set_headers:
+#       Host: "$host"
+#       X-Forwarded-For: "$proxy_add_x_forwarded_for"
+#
+# Notes
+#   - This file is HTTP-only. HTTPS server blocks are rendered via server_https.conf.j2.
+#   - If a location declares `proxy_pass` AND role toggle `web_nginx_proxy` is true,
+#     we emit proxy_pass and any custom headers; otherwise we return 503 to make it
+#     obvious that the proxy feature is disabled or misconfigured.
+#   - Access/error log paths default to per-vhost files under web_nginx_log_dir.
+#   - For IPv6 listeners, add `listen [::]:<port>;` as needed.
+# =============================================================================
+
+server {
+
+    # Listener (port may be a number or a full "IP:port" string). Defaults to role var.
+    listen {{ item.listen | default(web_nginx_listen_port) }};
+    # listen [::]:{{ item.listen | default(web_nginx_listen_port) }};  # ← optional IPv6
+
+    # Server names: primary + any aliases
+    server_name {{ item.server_name }}{% if item.extra_server_names is defined and item.extra_server_names %} {{ item.extra_server_names | join(' ') }}{% endif %};
+
+    # Per-vhost logs (sensible defaults if not explicitly set)
+    access_log {{ item.access_log | default(web_nginx_log_dir ~ '/' ~ (item.server_name | regex_replace('[^a-zA-Z0-9_.-]', '_')) ~ '-access.log') }};
+    error_log  {{ item.error_log  | default(web_nginx_log_dir ~ '/' ~ (item.server_name | regex_replace('[^a-zA-Z0-9_.-]', '_')) ~ '-error.log')  }};
+
+    # Document root and index (fallbacks come from role defaults)
+    root {{ item.root | default(web_nginx_catch_all_docroot) }};
+    index {{ item.index | default(web_nginx_default_index) }};
+
+    
+    {% if item.locations is defined %}
+    {% for loc in item.locations %}
+
+    # -------------------------------------------------------------------------
+    # Location: {{ loc.path }}
+    # -------------------------------------------------------------------------
+    location {{ loc.path }} {
+        {% if loc.try_files is defined %}
+        # Try static files first (typical for SPAs/static sites)
+        try_files {{ loc.try_files }};
+        {% endif %}
+        {% if loc.proxy_pass is defined %}
+        {% if web_nginx_proxy %}
+        # Reverse proxy to upstream
+        proxy_pass {{ loc.proxy_pass }};
+        {% if loc.proxy_set_headers is defined %}
+        {% for k, v in loc.proxy_set_headers.items() %}
+        # Optional custom proxy headers (merged with role-provided proxy.conf if used)
+        proxy_set_header {{ k }} {{ v }};
+        {% endfor %}
+        {% endif %}
+        {% else %}
+        # Role-wide proxy feature is disabled; make this explicit
+        return 503;
+        {% endif %}
+        {% endif %}
+    }
+    {% endfor %}
+    {% endif %}
+}

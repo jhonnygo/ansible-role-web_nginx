@@ -1,0 +1,87 @@
+# =============================================================================
+# HTTPS server block (managed by web_nginx role)
+#
+# Inputs (per vhost object `vhost`):
+#   - vhost.server_name              (string, required)
+#   - vhost.extra_server_names       (list[str], optional)
+#   - vhost.filename                 (string, derived elsewhere)
+#   - vhost.index                    (string, defaults to web_nginx_default_index)
+#   - vhost.root                     (string, optional → defaults to catch-all docroot)
+#   - vhost.access_log / error_log   (strings, optional; sensible defaults below)
+#   - vhost.locations                (list[location], optional — same shape as HTTP)
+#   - vhost.https.enabled            (bool; this file is rendered only when true)
+#   - vhost.https.listen             (string, default "443 ssl http2")
+#   - vhost.https.certificate        (path, default /etc/ssl/certs/<server>.crt)
+#   - vhost.https.certificate_key    (path, default /etc/ssl/private/<server>.key)
+#
+# Security notes (tunable per site or globally via extra snippets):
+#   - We keep TLS parameters minimal here; organizations typically manage ciphers,
+#     protocols, stapling, HSTS, etc., in a global include (e.g., conf.d/tls.conf).
+#   - Consider adding:
+#       ssl_protocols TLSv1.2 TLSv1.3;
+#       ssl_prefer_server_ciphers on;
+#       ssl_session_timeout 1d; ssl_session_cache shared:SSL:10m;
+#       add_header Strict-Transport-Security "max-age=31536000" always;
+#       ssl_stapling on; ssl_stapling_verify on;
+#     Validate with SSL Labs and your security baseline.
+# =============================================================================
+server {
+    # Listener — allow override like "0.0.0.0:443 ssl http2" or "443 ssl http2".
+    listen {{ vhost.https.listen | default('443 ssl http2') }};
+    # Optional IPv6:
+    # listen [::]:443 ssl http2;
+
+    # Server names: primary + any aliases
+    server_name {{ vhost.server_name }}{% if vhost.extra_server_names is defined and vhost.extra_server_names %} {{ vhost.extra_server_names | join(' ') }}{% endif %};
+
+    # Per-vhost logs (defaults to NGINX log dir with sanitized server_name)
+    access_log {{ vhost.access_log | default(web_nginx_log_dir ~ '/' ~ (vhost.server_name | regex_replace('[^a-zA-Z0-9_.-]', '_')) ~ '-access.log') }};
+    error_log  {{ vhost.error_log  | default(web_nginx_log_dir ~ '/' ~ (vhost.server_name | regex_replace('[^a-zA-Z0-9_.-]', '_')) ~ '-error.log')  }};
+
+    # Document root and index
+    root {{ vhost.root | default(web_nginx_catch_all_docroot) }};
+    index {{ vhost.index | default(web_nginx_default_index) }};
+
+    # Certificates (self-signed or provided paths)
+    ssl_certificate     {{ vhost.https.certificate | default('/etc/ssl/certs/' ~ vhost.server_name ~ '.crt') }};
+    ssl_certificate_key {{ vhost.https.certificate_key | default('/etc/ssl/private/' ~ vhost.server_name ~ '.key') }};
+
+    # --- Optional hardening (uncomment/tune as needed) ------------------------
+    # ssl_protocols TLSv1.2 TLSv1.3;
+    # ssl_prefer_server_ciphers on;
+    # ssl_session_timeout 1d;
+    # ssl_session_cache shared:SSL:10m;
+    # add_header Strict-Transport-Security "max-age=31536000" always;
+    # ssl_stapling on;
+    # ssl_stapling_verify on;
+
+    {% if vhost.locations is defined %}
+    {% for loc in vhost.locations %}
+
+    # -------------------------------------------------------------------------
+    # Location: {{ loc.path }}
+    # -------------------------------------------------------------------------
+    location {{ loc.path }} {
+        {% if loc.try_files is defined %}
+        # Try static files first (typical for SPAs/static content)
+        try_files {{ loc.try_files }};
+        {% endif %}
+        {% if loc.proxy_pass is defined %}
+        {% if web_nginx_proxy %}
+        # Reverse proxy to upstream over HTTPS server
+        proxy_pass {{ loc.proxy_pass }};
+        {% if loc.proxy_set_headers is defined %}
+        {% for k, v in loc.proxy_set_headers.items() %}
+        # Optional custom proxy headers (merged with conf.d/proxy.conf if present)
+        proxy_set_header {{ k }} {{ v }};
+        {% endfor %}
+        {% endif %}
+        {% else %}
+        # Role-wide proxy feature disabled; return 503 to make it explicit
+        return 503;
+        {% endif %}
+        {% endif %}
+    }
+    {% endfor %}
+    {% endif %}
+}

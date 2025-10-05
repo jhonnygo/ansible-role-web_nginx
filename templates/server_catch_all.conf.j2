@@ -1,0 +1,37 @@
+# =============================================================================
+# Catch-all server block (managed by web_nginx role)
+#
+# Purpose
+#   Provide a safe default_server for unknown/undeclared hostnames.
+#   Behavior is controlled by:
+#     - web_nginx_catch_all_mode: "403" | "404" | "redirect"
+#     - web_nginx_catch_all_redirect_to: URL used when mode == "redirect"
+#
+# Notes
+#   - We intentionally keep this minimal to avoid accidental content exposure.
+#   - Document root points to a safe, empty directory.
+#   - This server is marked as `default_server` for port 80 to catch strays.
+#   - If you need IPv6, consider adding: `listen [::]:80 default_server;`
+# =============================================================================
+
+server {
+    # Default IPv4 listener that catches any unmatched host on port 80
+    listen 80 default_server;
+
+    # Wildcard server_name for catch-all behavior
+    server_name _;
+
+    # Safe empty docroot to avoid directory listings or accidental content
+    root {{ web_nginx_catch_all_docroot }};
+
+    {% if web_nginx_catch_all_mode == '403' %}
+    # Deny by default (forbidden)
+    return 403;
+    {% elif web_nginx_catch_all_mode == '404' %}
+    # Not found (common for unknown virtual hosts)
+    return 404;
+    {% elif web_nginx_catch_all_mode == 'redirect' %}
+    # Permanent redirect to the canonical host/application
+    return 301 {{ web_nginx_catch_all_redirect_to }};
+    {% endif %}
+}

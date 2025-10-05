@@ -1,0 +1,50 @@
+---
+# =============================================================================
+# Tasks: Install NGINX and prepare filesystem layout
+#
+# Goals
+#   - Refresh apt cache (fast if within cache_valid_time).
+#   - Ensure required packages are present (nginx, python3-apt by default).
+#   - Create key directories only when it makes sense (i.e., not in check mode
+#     before packages are installed).
+#
+# Check-mode strategy
+#   - We force real execution on apt tasks (check_mode: false) so that a first
+#     run in --check doesn’t fail later due to a missing service/binaries.
+#   - We SKIP creating directories in check-mode to avoid simulating paths that
+#     normally come from packages (prevents false positives and odd states).
+#
+# Idempotency
+#   - All tasks are idempotent; re-runs won’t change state unless needed.
+# =============================================================================
+
+# Keep apt metadata reasonably fresh so package resolution is predictable.
+- name: Ensure apt cache is up to date
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600    # seconds; skip update if cache is younger
+  check_mode: false           # execute even under --check for reliability
+
+# Install NGINX and helper packages (default: nginx, python3-apt).
+- name: Install packages
+  ansible.builtin.apt:
+    name: "{{ web_nginx_packages }}"
+    state: present
+  check_mode: false           # ensure packages really exist even in --check
+
+# Create standard directories only during real runs.
+# Rationale:
+#   - Packages typically create these paths; in check-mode we avoid fabricating
+#     them and prefer to validate after actual install.
+- name: Ensure key directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ web_nginx_sites_available }}"
+    - "{{ web_nginx_sites_enabled }}"
+    - "{{ web_nginx_log_dir }}"
+  when: not ansible_check_mode  # don’t simulate on --check; create on real run

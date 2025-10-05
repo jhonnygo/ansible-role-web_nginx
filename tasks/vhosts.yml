@@ -1,0 +1,84 @@
+---
+# =============================================================================
+# Tasks: Manage declared virtual hosts (server blocks)
+#
+# Flow
+#   1) Normalize user-provided vhost dicts (derive filename/index/listen/https).
+#   2) Ensure document roots exist (when defined on each vhost).
+#   3) Render HTTP server blocks from template into sites-available.
+#   4) Enable HTTP sites via symlink into sites-enabled.
+#   5) Include HTTPS tasks per vhost when requested (separate file ssl.yml).
+#
+# Notes
+#   - Normalization keeps the rest of the tasks simple and predictable.
+#   - Idempotency: file/template/symlink tasks only change when content changes.
+#   - Handlers: rendering/enabling notifies "reload nginx" which validates
+#     with `nginx -t` before actually reloading.
+# =============================================================================
+
+# 1) Normalize vhosts
+#    - filename: if not provided, derive from server_name (safe chars) + ".conf".
+#    - index:    default to role’s web_nginx_default_index.
+#    - listen:   default to role’s web_nginx_listen_port.
+#    - https:    ensure an https dict exists (at least {enabled: false}).
+# Normaliza items (filename, index, listen, https dict)
+- name: Normalize vhosts
+  ansible.builtin.set_fact:
+    _web_nginx_vhosts_norm: >-
+      {{ web_nginx_vhosts | map('combine', {
+          'filename': (item.filename | default((item.server_name | regex_replace('[^a-zA-Z0-9_.-]', '_')) ~ '.conf')),
+          'index': (item.index | default(web_nginx_default_index)),
+          'listen': (item.listen | default(web_nginx_listen_port)),
+          'https': (item.https | default({'enabled': false}))
+        }) | list }}
+  loop: "{{ web_nginx_vhosts }}"
+  loop_control:
+    loop_var: item
+
+# 2) Ensure document roots exist (only for vhosts that define `root`)
+#    Ownership and mode come from role defaults; override per vhost if needed
+#    by adding your own file tasks in the calling play.
+- name: Ensure vhost docroots exist (if defined)
+  ansible.builtin.file:
+    path: "{{ item.root }}"
+    state: directory
+    owner: "{{ web_nginx_docroot_default_owner }}"
+    group: "{{ web_nginx_docroot_default_group }}"
+    mode:  "{{ web_nginx_docroot_default_mode }}"
+  loop: "{{ _web_nginx_vhosts_norm | selectattr('root', 'defined') | list }}"
+
+# 3) Render HTTP server configs from template
+#    - Template: templates/server_http.conf.j2
+#    - Destination: sites-available/<filename>
+#    Any change triggers the "reload nginx" handler (which validates first).
+- name: Render HTTP server configs
+  ansible.builtin.template:
+    src: server_http.conf.j2
+    dest: "{{ web_nginx_sites_available }}/{{ item.filename }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ _web_nginx_vhosts_norm }}"
+  notify: reload nginx
+
+# 4) Enable HTTP vhosts by creating a symlink in sites-enabled
+#    - We use force: true to keep this idempotent even if the link already exists
+#      or points somewhere else; this ensures the desired link target.
+- name: Enable HTTP vhosts via symlink
+  ansible.builtin.file:
+    src: "{{ web_nginx_sites_available }}/{{ item.filename }}"
+    dest: "{{ web_nginx_sites_enabled }}/{{ item.filename }}"
+    state: link
+    force: true
+  loop: "{{ _web_nginx_vhosts_norm }}"
+  notify: reload nginx
+
+# 5) Include HTTPS tasks per vhost when requested
+#    - ssl.yml expects loop_var "vhost"
+#    - It renders <basename>-ssl.conf and enables it (separate from HTTP file)
+- name: Include SSL tasks per vhost
+  ansible.builtin.include_tasks: ssl.yml
+  loop: "{{ _web_nginx_vhosts_norm }}"
+  loop_control:
+    loop_var: vhost
+  when: vhost.https.enabled | default(false) | bool

@@ -1,0 +1,23 @@
+# CHANGELOG
+
+## [0.1.0] - 2025-10-05
+### Added
+- Initial release of the `web_nginx` role.
+- Installs and manages `nginx` service (state + enablement).
+- Declarative server blocks (vhosts) via `web_nginx_vhosts` with per-site `root`, `index`, log paths, and aliases.
+- Jinja2 templates for HTTP/HTTPS/catch-all:
+  - `templates/server_http.conf.j2`
+  - `templates/server_https.conf.j2`
+  - `templates/server_catch_all.conf.j2`
+- Per‑vhost HTTPS support (self‑signed or provided `certificate`/`certificate_key`), rendered as `<basename>-ssl.conf`.
+- Optional catch‑all site (`000-catch-all.conf`) with modes `403`, `404`, or `redirect`.
+- Optional purge of unmanaged vhosts with normalized excludes (`web_nginx_purge_exclude_names`) and safety guards.
+- conf.d feature toggles:
+  - `files/20-gzip.conf` parameters (no `gzip on;` to avoid duplicates).
+  - `files/proxy.conf` default reverse‑proxy headers.
+- Docroot management with owner/group/mode defaults; optional seeding of `index.html` in the playbook.
+- Handlers validate with `nginx -t` and reload only on success; optional restart handler.
+- Check‑mode friendly:
+  - Apt tasks run with `check_mode: false` to prevent false negatives on first runs.
+  - Directory creation skipped in check mode when package artifacts may not exist yet.
+- Molecule scenario (Docker) idea to validate: package install, service running, port 80 listening, vhost answering.

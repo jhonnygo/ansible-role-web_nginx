@@ -1,0 +1,107 @@
+---
+# =============================================================================
+# Role Defaults — web_nginx
+#
+# These are the baseline variables for the role. Every value below can be
+# overridden at any higher precedence level (group_vars, host_vars, extra vars,
+# inventory, etc.). Keep them minimal, safe, and idempotent.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Packages to install on Debian/Ubuntu. Keep the list minimal; add-only if your
+# environment requires extra modules. python3-apt is useful for apt facts.
+# -----------------------------------------------------------------------------
+web_nginx_packages:
+  - nginx
+  - python3-apt
+
+# -----------------------------------------------------------------------------
+# NGINX service behavior
+# - web_nginx_state: desired runtime state (started|stopped).
+# - web_nginx_enabled: whether to enable the service at boot.
+# -----------------------------------------------------------------------------
+web_nginx_state: started          # started | stopped
+web_nginx_enabled: true
+
+# -----------------------------------------------------------------------------
+# Default HTTP listen port used by vhosts when `item.listen` is not provided.
+# This does not change the global nginx.conf; it is used by rendered server
+# blocks. Override per vhost as needed.
+# -----------------------------------------------------------------------------
+web_nginx_listen_port: 80
+
+# -----------------------------------------------------------------------------
+# Declared virtual hosts. Each entry is a dict describing one server block.
+# See the README/examples for the full schema (server_name, filename, root,
+# locations, https, etc.). By default, nothing is managed.
+# -----------------------------------------------------------------------------
+web_nginx_vhosts: []
+
+# -----------------------------------------------------------------------------
+# Purge behavior (DANGEROUS on shared hosts):
+# - When true, the role will remove any *.conf in sites-available/enabled that
+#   is NOT explicitly declared in web_nginx_vhosts, NOT in the exclude list
+#   below, and NOT the managed catch-all file (if enabled).
+# - Use with care if several teams manage vhosts on the same machine.
+# -----------------------------------------------------------------------------
+web_nginx_purge_unlisted_vhosts: false
+
+# -----------------------------------------------------------------------------
+# Purge exclude list (filenames WITHOUT or WITH .conf are both accepted).
+# Normalization removes .conf before comparison.
+# Keep "default" and the role’s catch-all by default.
+# -----------------------------------------------------------------------------
+web_nginx_purge_exclude_names:
+  - "default"
+  - "000-catch-all"
+
+# -----------------------------------------------------------------------------
+# Catch-all server block management
+# - web_nginx_manage_catch_all: render and enable a default_server site.
+# - web_nginx_catch_all_mode: behavior for unknown hosts:
+#     * 403      → return 403 Forbidden
+#     * 404      → return 404 Not Found
+#     * redirect → return 301 to web_nginx_catch_all_redirect_to
+# - web_nginx_catch_all_docroot: a safe empty docroot (no listings by default).
+# - web_nginx_catch_all_filename: filename placed under sites-available/enabled.
+# -----------------------------------------------------------------------------
+web_nginx_manage_catch_all: true
+web_nginx_catch_all_mode: "403"   # 404 | 403 | redirect
+web_nginx_catch_all_redirect_to: "https://example.org"
+web_nginx_catch_all_docroot: "/var/www/empty"
+web_nginx_catch_all_filename: "000-catch-all.conf"
+
+# -----------------------------------------------------------------------------
+# Disable the distro-provided "default" site to avoid duplicate `default_server`
+# conflicts when the role manages its own catch-all.
+# Set to false if you want to keep the distro default site enabled.
+# -----------------------------------------------------------------------------
+web_nginx_remove_distro_default: true
+
+# -----------------------------------------------------------------------------
+# Common filesystem paths for Debian/Ubuntu layout.
+# - sites_available / sites_enabled: where vhost files and symlinks live.
+# - web_nginx_log_dir: base directory for access/error logs.
+# - docroot defaults: owner/group/mode used when creating docroots.
+# -----------------------------------------------------------------------------
+web_nginx_sites_available: /etc/nginx/sites-available
+web_nginx_sites_enabled: /etc/nginx/sites-enabled
+web_nginx_log_dir: /var/log/nginx
+web_nginx_docroot_default_mode: '0755'
+web_nginx_docroot_default_owner: 'www-data'
+web_nginx_docroot_default_group: 'www-data'
+
+# -----------------------------------------------------------------------------
+# conf.d feature toggles
+# - web_nginx_gzip: manage a gzip tuning snippet in conf.d (parameters only,
+#   the role does NOT force `gzip on;` to avoid duplicates if enabled elsewhere).
+# - web_nginx_proxy: manage a proxy headers snippet in conf.d for reverse proxy
+#   locations (safe defaults).
+# -----------------------------------------------------------------------------
+web_nginx_gzip: true
+web_nginx_proxy: true
+
+# -----------------------------------------------------------------------------
+# Default index directive for vhosts (used if a vhost doesn’t specify `index`).
+# -----------------------------------------------------------------------------
+web_nginx_default_index: "index.html index.htm"
