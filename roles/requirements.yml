@@ -1,0 +1,3 @@
+roles:
+  - name: jhonnygo.web_nginx
+    version: "0.1.2"

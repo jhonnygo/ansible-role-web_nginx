@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## [0.1.2] - 2025-10-05
+- Added requirements to `web_nginx` role.
+
+## [0.1.1] - 2025-10-05
+### Remove
+- Remove test_syntax.yml file
+- Fix README
+
 ## [0.1.0] - 2025-10-05
 ### Added
 - Initial release of the `web_nginx` role.
