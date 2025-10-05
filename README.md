@@ -25,6 +25,7 @@ Ansible role to **install and configure NGINX with declarative vhosts** on Debia
 - [Quick Start](#quick-start)
 - [Role Variables](#role-variables)
 - [Usage Examples](#usage-examples)
+- [Enable Reverse Proxy](#enable-reverse-proxy)
 - [Test Matrix](#test-matrix)
 - [Lint](#lint)
 - [Links](#links)
@@ -196,6 +197,54 @@ web_nginx_vhosts:
 
 ---
 
+## Enable Reverse Proxy
+
+The role already provides safe proxy defaults (`conf.d/proxy.conf`) when `web_nginx_proxy: true` (default). To enable a reverse proxy for a vhost, add a `location` with `proxy_pass`:
+
+```yaml
+web_nginx_vhosts:
+  - server_name: "api.example.com"
+    filename: "110-api.conf"
+    root: /var/www/empty
+    locations:
+      - path: /
+        proxy_pass: "http://127.0.0.1:8080"
+        proxy_set_headers:
+          Host: "$host"
+          X-Forwarded-For: "$proxy_add_x_forwarded_for"
+```
+
+**WebSockets / HTTP/1.1**
+```yaml
+locations:
+  - path: /socket
+    proxy_pass: "http://127.0.0.1:3000"
+    proxy_set_headers:
+      Host: "$host"
+      X-Forwarded-For: "$proxy_add_x_forwarded_for"
+      Upgrade: "$http_upgrade"
+      Connection: "upgrade"
+```
+
+**Front-end HTTPS with back-end HTTP**
+```yaml
+web_nginx_vhosts:
+  - server_name: "secure.example.com"
+    filename: "120-secure.conf"
+    root: /var/www/empty
+    locations:
+      - path: /
+        proxy_pass: "http://127.0.0.1:8080"
+        proxy_set_headers:
+          Host: "$host"
+          X-Forwarded-For: "$proxy_add_x_forwarded_for"
+    https:
+      enabled: true
+      self_signed: true      # or provide your cert/key paths
+```
+
+---
+
 ## Test Matrix
 
 | Distro / Version | Arch | NGINX | Python | Notes |
@@ -215,26 +264,6 @@ web_nginx_vhosts:
 ```bash
 ansible-lint roles/web_nginx
 yamllint roles/web_nginx
-```
-
----
-
-## Publishing to Galaxy
-
-This repository is a **role** (not a collection). Prepare `galaxy.yml`:
-
-```yaml
-namespace: jhonnygo
-name: web_nginx
-version: 0.1.0
-readme: README.md
-description: "Install and configure NGINX with declarative vhosts, HTTPS, catch-all, and purge support on Debian/Ubuntu."
-authors:
-  - "Jhonny Alexander (JhonnyGO) <support@jhoncytech.com>"
-license: MIT
-repository: "https://github.com/jhonnygo/ansible-role-web_nginx"
-issues: "https://github.com/jhonnygo/ansible-role-web_nginx/issues"
-tags: ["nginx","web","vhosts","debian","ubuntu","reverse-proxy","https"]
 ```
 
 ---
