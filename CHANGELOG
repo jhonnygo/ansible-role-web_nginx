@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## [0.1.3] - 2025-10-05
+- Removed requirements to `web_nginx` role.
+
 ## [0.1.2] - 2025-10-05
 - Added requirements to `web_nginx` role.
 
